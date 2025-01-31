@@ -1,56 +1,79 @@
 import streamlit as st
-from openai import OpenAI
+import pandas as pd
+import matplotlib.pyplot as plt
+import seaborn as sns
 
-# Show title and description.
-st.title("💬 Chatbot")
-st.write(
-    "This is a simple chatbot that uses OpenAI's GPT-3.5 model to generate responses. "
-    "To use this app, you need to provide an OpenAI API key, which you can get [here](https://platform.openai.com/account/api-keys). "
-    "You can also learn how to build this app step by step by [following our tutorial](https://docs.streamlit.io/develop/tutorials/llms/build-conversational-apps)."
+# Set Streamlit page configuration
+st.set_page_config(
+    page_title="Airline Passenger Satisfaction Analysis",
+    layout="wide",
+    initial_sidebar_state="expanded",
 )
 
-# Ask user for their OpenAI API key via `st.text_input`.
-# Alternatively, you can store the API key in `./.streamlit/secrets.toml` and access it
-# via `st.secrets`, see https://docs.streamlit.io/develop/concepts/connections/secrets-management
-openai_api_key = st.text_input("OpenAI API Key", type="password")
-if not openai_api_key:
-    st.info("Please add your OpenAI API key to continue.", icon="🗝️")
-else:
+# Load the dataset
+@st.cache_data
+def load_data():
+    data = pd.read_csv('airline_satisfaction.csv')
+    return data
 
-    # Create an OpenAI client.
-    client = OpenAI(api_key=openai_api_key)
+df = load_data()
 
-    # Create a session state variable to store the chat messages. This ensures that the
-    # messages persist across reruns.
-    if "messages" not in st.session_state:
-        st.session_state.messages = []
+# Sidebar filters
+st.sidebar.header("Filter Options")
+customer_type = st.sidebar.multiselect(
+    "Customer Type",
+    options=df["Customer Type"].unique(),
+    default=df["Customer Type"].unique()
+)
+travel_class = st.sidebar.multiselect(
+    "Class",
+    options=df["Class"].unique(),
+    default=df["Class"].unique()
+)
+age_range = st.sidebar.slider(
+    "Age Range",
+    int(df["Age"].min()),
+    int(df["Age"].max()),
+    (int(df["Age"].min()), int(df["Age"].max()))
+)
 
-    # Display the existing chat messages via `st.chat_message`.
-    for message in st.session_state.messages:
-        with st.chat_message(message["role"]):
-            st.markdown(message["content"])
+# Apply filters
+filtered_df = df[
+    (df["Customer Type"].isin(customer_type)) &
+    (df["Class"].isin(travel_class)) &
+    (df["Age"] >= age_range[0]) &
+    (df["Age"] <= age_range[1])
+]
 
-    # Create a chat input field to allow the user to enter a message. This will display
-    # automatically at the bottom of the page.
-    if prompt := st.chat_input("What is up?"):
+# Main dashboard
+st.title("Airline Passenger Satisfaction Analysis")
 
-        # Store and display the current prompt.
-        st.session_state.messages.append({"role": "user", "content": prompt})
-        with st.chat_message("user"):
-            st.markdown(prompt)
+# Display filtered data
+st.subheader("Filtered Data")
+st.write(f"Total Records: {filtered_df.shape[0]}")
+st.dataframe(filtered_df)
 
-        # Generate a response using the OpenAI API.
-        stream = client.chat.completions.create(
-            model="gpt-3.5-turbo",
-            messages=[
-                {"role": m["role"], "content": m["content"]}
-                for m in st.session_state.messages
-            ],
-            stream=True,
-        )
+# Satisfaction distribution
+st.subheader("Satisfaction Distribution")
+fig, ax = plt.subplots()
+sns.countplot(data=filtered_df, x="satisfaction", palette="viridis", ax=ax)
+st.pyplot(fig)
 
-        # Stream the response to the chat using `st.write_stream`, then store it in 
-        # session state.
-        with st.chat_message("assistant"):
-            response = st.write_stream(stream)
-        st.session_state.messages.append({"role": "assistant", "content": response})
+# Satisfaction by Travel Class
+st.subheader("Satisfaction by Travel Class")
+fig, ax = plt.subplots()
+sns.countplot(data=filtered_df, x="Class", hue="satisfaction", palette="viridis", ax=ax)
+st.pyplot(fig)
+
+# Age Distribution
+st.subheader("Age Distribution")
+fig, ax = plt.subplots()
+sns.histplot(filtered_df["Age"], bins=30, kde=True, color="skyblue", ax=ax)
+st.pyplot(fig)
+
+# Correlation Heatmap
+st.subheader("Correlation Heatmap")
+corr = filtered_df.corr()
+fig, ax = plt.subplots(figsize=(12, 10))
+sns.heatmap(corr, annot=True, cmap="coolwarm", fmt=".2f", ax=ax)
+st.pyplot(fig)
